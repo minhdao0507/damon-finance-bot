@@ -1,0 +1,19 @@
+# Credentials
+keys/
+credentials.json
+*.env
+.env
+
+# Old root-level files
+/finance_bot.py
+/finance_bot_quinn.py
+/files.zip
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime files (on VM)
+user_sources.json
+learned_keywords.json

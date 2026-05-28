@@ -1,0 +1,5 @@
+python-telegram-bot>=20.0
+gspread>=5.0
+google-auth>=2.0
+pikepdf>=8.0
+pdfplumber>=0.9

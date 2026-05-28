@@ -1,0 +1,4 @@
+python-telegram-bot[job-queue]>=20.0
+gspread>=5.0
+google-auth>=2.0
+google-genai>=1.0
