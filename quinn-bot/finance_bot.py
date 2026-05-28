@@ -37,7 +37,8 @@ LEARNED_FILE  = BASE_DIR / "learned_keywords.json"
 # ── Conversation states ─────────────────────────────────────────
 (COLLECT_TX, ASK_SOURCE, CONFIRM_ALL,
  EDIT_CAT, EDIT_CAT_CUSTOM,
- ADD_SOURCE_NAME, ADD_SOURCE_CURRENCY) = range(7)
+ ADD_SOURCE_NAME, ADD_SOURCE_CURRENCY,
+ ANALYZE_CHAT) = range(8)
 
 # ── Default sources ─────────────────────────────────────────────
 DEFAULT_SOURCES = [
@@ -750,13 +751,15 @@ async def cmd_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── AI Analysis ─────────────────────────────────────────────────
 
 async def cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update):
+        return ConversationHandler.END
     await update.message.reply_text("🤖 Đang phân tích chi tiêu tháng này...")
     try:
         ws   = get_sheet()
         rows = ws.get_all_values()[1:]
         if not rows:
             await update.message.reply_text("Tháng này chưa có giao dịch nào.")
-            return
+            return ConversationHandler.END
 
         by_cat = {}
         detail = []
@@ -790,10 +793,56 @@ async def cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
         client   = genai.Client(api_key=GEMINI_API_KEY)
         response = client.models.generate_content(model="gemini-2.5-flash-lite", contents=prompt)
         clean    = re.sub(r"\*{1,2}|_{1,2}|`{1,3}", "", response.text)
-        await update.message.reply_text(f"🤖 Phân tích AI\n\n{clean}")
+
+        context.user_data["analyze_summary"] = summary
+        context.user_data["analyze_history"] = [
+            {"role": "user", "text": prompt},
+            {"role": "model", "text": response.text},
+        ]
+
+        await update.message.reply_text(
+            f"🤖 Phân tích AI\n\n{clean}\n\n"
+            "💬 Hỏi thêm bất cứ điều gì, hoặc /cancel để thoát."
+        )
+        return ANALYZE_CHAT
     except Exception as e:
         logger.error(f"Analyze error: {e}")
         await update.message.reply_text(f"❌ Lỗi phân tích: {e}")
+        return ConversationHandler.END
+
+
+async def handle_analyze_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_authorized(update):
+        return ConversationHandler.END
+
+    user_msg = update.message.text.strip()
+    history  = context.user_data.get("analyze_history", [])
+    summary  = context.user_data.get("analyze_summary", "")
+
+    conv_text = (
+        "You are a personal finance advisor. Here is the user's spending data for context:\n\n"
+        f"{summary}\n\nConversation so far:\n"
+    )
+    for msg in history:
+        role = "User" if msg["role"] == "user" else "Assistant"
+        conv_text += f"{role}: {msg['text']}\n\n"
+    conv_text += f"User: {user_msg}\n\nReply in Vietnamese, concise and friendly."
+
+    try:
+        client   = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(model="gemini-2.5-flash-lite", contents=conv_text)
+        clean    = re.sub(r"\*{1,2}|_{1,2}|`{1,3}", "", response.text)
+
+        history.append({"role": "user",  "text": user_msg})
+        history.append({"role": "model", "text": response.text})
+        context.user_data["analyze_history"] = history
+
+        await update.message.reply_text(clean)
+        return ANALYZE_CHAT
+    except Exception as e:
+        logger.error(f"Analyze chat error: {e}")
+        await update.message.reply_text(f"❌ Lỗi: {e}")
+        return ANALYZE_CHAT
 
 
 # ── Daily reminder ──────────────────────────────────────────────
@@ -841,14 +890,25 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
+    analyze_conv = ConversationHandler(
+        entry_points=[CommandHandler("analyze", cmd_analyze)],
+        states={
+            ANALYZE_CHAT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_analyze_chat),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+        allow_reentry=True,
+    )
+
     app.add_handler(CommandHandler("start",   cmd_start))
     app.add_handler(CommandHandler("help",    cmd_help))
     app.add_handler(CommandHandler("today",   cmd_today))
     app.add_handler(CommandHandler("week",    cmd_week))
     app.add_handler(CommandHandler("month",   cmd_month))
-    app.add_handler(CommandHandler("analyze", cmd_analyze))
     app.add_handler(CommandHandler("src",     cmd_sources))
     app.add_handler(CallbackQueryHandler(handle_delete_source, pattern=r"^(delsrc|noop|closesrc)"))
+    app.add_handler(analyze_conv)
     app.add_handler(conv)
 
     # 23:30 GMT+7 = 16:30 UTC
