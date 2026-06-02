@@ -892,6 +892,10 @@ def main():
     app.job_queue.run_daily(daily_reminder, time=dtime(hour=16, minute=30, tzinfo=timezone.utc))
     # 05:45 GMT+7 = 22:45 UTC
     app.job_queue.run_daily(morning_digest, time=dtime(hour=22, minute=45, tzinfo=timezone.utc))
+    # 09:00 GMT+7 = 02:00 UTC
+    app.job_queue.run_daily(morning_digest, time=dtime(hour=2,  minute=0,  tzinfo=timezone.utc))
+    # 13:00 GMT+7 = 06:00 UTC
+    app.job_queue.run_daily(morning_digest, time=dtime(hour=6,  minute=0,  tzinfo=timezone.utc))
 
     print("Finance Bot dang chay...")
     app.run_polling()
