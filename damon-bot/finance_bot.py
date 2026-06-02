@@ -8,6 +8,7 @@ Damon's Personal Finance Telegram Bot — v2
 - Auto-learn keywords from manual edits
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -815,6 +816,24 @@ async def daily_reminder(context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ── Morning market digest (5:45 AM GMT+7) ───────────────────────
+
+async def morning_digest(context: ContextTypes.DEFAULT_TYPE):
+    try:
+        from market_digest import build_digest
+        text = await asyncio.to_thread(build_digest)
+        await context.bot.send_message(
+            chat_id=YOUR_CHAT_ID,
+            text=text,
+            parse_mode="MarkdownV2",
+        )
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=YOUR_CHAT_ID,
+            text=f"⚠️ Market digest lỗi hôm nay: {e}",
+        )
+
+
 # ── Main ────────────────────────────────────────────────────────
 
 def main():
@@ -871,6 +890,8 @@ def main():
 
     # 23:30 GMT+7 = 16:30 UTC
     app.job_queue.run_daily(daily_reminder, time=dtime(hour=16, minute=30, tzinfo=timezone.utc))
+    # 05:45 GMT+7 = 22:45 UTC
+    app.job_queue.run_daily(morning_digest, time=dtime(hour=22, minute=45, tzinfo=timezone.utc))
 
     print("Finance Bot dang chay...")
     app.run_polling()
