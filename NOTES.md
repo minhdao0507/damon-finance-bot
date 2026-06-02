@@ -1,46 +1,57 @@
 # Finance Bot — Ghi chép dự án
 
-Cập nhật: 2026-05-27
+Cập nhật: 2026-06-02
 
 ---
 
 ## Tổng quan
 
-Hệ thống bot Telegram theo dõi chi tiêu cá nhân, tự động phân loại, lưu vào Google Sheets và phân tích bằng AI (Gemini). Có 2 bot riêng biệt: **Damon** và **Quinn**.
+Hệ thống 2 Telegram bot theo dõi chi tiêu cá nhân, tự động phân loại, lưu vào Google Sheets, và phân tích bằng AI. Bao gồm tính năng **market digest** gửi bản tin thị trường hàng ngày.
+
+**2 bot độc lập:**
+
+| Bot | Người dùng | Tiền tệ | Repo GitHub |
+|-----|-----------|---------|-------------|
+| Damon Bot | Damon | VND | `damon-finance-bot` |
+| Quinn Bot | Quinn + Damon | VND + USD | `quinn-finance-bot` |
+
+> **Lưu ý hạ tầng:** Cả 2 bot chạy trên VM instance `apple-monitor` thuộc **GCP project `apple-monitor`** (us-central1-a, e2-micro). Finance Bot và Apple Procurement Monitor là **2 dự án logic hoàn toàn riêng biệt** — chỉ dùng chung VM để tiết kiệm chi phí (e2-micro Always Free). GCP project `personal-finance-adviser` tồn tại riêng cho service account + Google Sheets, không có VM.
 
 ---
 
-## Kiến trúc
+## Infrastructure
 
-```text
-Telegram (người dùng)
-        ↓
-  finance_bot.py   ← chạy trên GCP VM (apple-monitor, us-central1-a)
-        ↓
-  Google Sheets    ← lưu từng giao dịch theo tab tháng (YYYY-MM)
-        ↓
-  Gemini API       ← phân tích AI khi dùng /analyze
-```
+| Thứ | Chi tiết |
+|-----|----------|
+| Máy chủ | GCP VM `apple-monitor`, us-central1-a, e2-micro (Always Free) |
+| OS | Ubuntu |
+| User | `dphm57` |
+| Thư mục Damon | `/home/dphm57/finance_bot/` |
+| Thư mục Quinn | `/home/dphm57/finance_bot_quinn/` |
 
 ---
 
-## Cấu trúc thư mục
+## Cấu trúc thư mục (local)
 
 ```text
 M:\Working\financebot\
 ├── damon-bot\
-│   ├── finance_bot.py       ← bot chính v2 (đã deploy)
-│   ├── credentials.json     ← GCP service account (KHÔNG commit git)
+│   ├── finance_bot.py        ← bot chính v2, bao gồm market digest
+│   ├── market_digest.py      ← module thu thập dữ liệu thị trường
 │   ├── requirements.txt
-│   ├── railway.json
+│   ├── credentials.json      ← GCP service account (KHÔNG commit)
+│   ├── learned_keywords.json ← tự học từ user corrections
+│   ├── user_sources.json     ← danh sách nguồn tiền
 │   └── .gitignore
 ├── quinn-bot\
-│   ├── finance_bot.py       ← bot v2 (đã deploy)
-│   ├── credentials.json
+│   ├── finance_bot.py        ← bot v2 (VND + USD)
 │   ├── requirements.txt
+│   ├── credentials.json
+│   ├── learned_keywords.json
+│   ├── user_sources.json
 │   └── .gitignore
 └── keys\
-    ├── credentials.json     ← bản gốc service account
+    ├── credentials.json      ← bản gốc service account
     └── ssh-key-2026-05-23.key
 ```
 
@@ -48,53 +59,59 @@ M:\Working\financebot\
 
 ## Config quan trọng
 
-### Damon Bot
+### Damon Bot (`damon-bot/finance_bot.py`)
 
-| Biến | Giá trị |
-| ------ | --------- |
-| BOT_TOKEN | `<your_damon_bot_token>` |
-| SHEET_ID | `<your_google_sheet_id>` |
-| YOUR_CHAT_ID | `<your_telegram_chat_id>` |
-| ALLOWED_IDS | `{your_chat_id}` |
+| Biến | Mô tả |
+|------|-------|
+| `BOT_TOKEN` | Token từ @BotFather |
+| `SHEET_ID` | Google Sheet ID |
+| `YOUR_CHAT_ID` | Telegram ID của Damon |
+| `ALLOWED_IDS` | `{YOUR_CHAT_ID}` |
+| `GEMINI_API_KEY` | Google AI Studio key |
 
-### Quinn Bot
+### Quinn Bot (`quinn-bot/finance_bot.py`)
 
-| Biến | Giá trị |
-| ------ | --------- |
-| BOT_TOKEN | `<your_quinn_bot_token>` |
-| SHEET_ID | `<your_google_sheet_id>` |
-| YOUR_CHAT_ID | `<quinn_telegram_chat_id>` |
-| ALLOWED_IDS | `{quinn_id, damon_id}` (cả 2 đều dùng được) |
-| GEMINI_API_KEY | dùng chung key với Damon bot |
+| Biến | Mô tả |
+|------|-------|
+| `BOT_TOKEN` | Token riêng của Quinn bot |
+| `SHEET_ID` | Google Sheet riêng của Quinn |
+| `YOUR_CHAT_ID` | Telegram ID của Quinn |
+| `ALLOWED_IDS` | `{quinn_id, damon_id}` |
+| `GEMINI_API_KEY` | Dùng chung key |
 
 ### GCP Service Account
 
 - Project: `personal-finance-adviser`
 - Email: `finance-bot@personal-finance-adviser.iam.gserviceaccount.com`
-- File: `M:\Working\financebot\keys\credentials.json`
+- File local: `M:\Working\financebot\keys\credentials.json`
+- Scope: Google Sheets API + Google Drive API
 
 ### Gemini API
 
-- Key: `<your_gemini_api_key>` (dùng chung với Apple monitor)
-- Model: `gemini-2.5-flash-lite` (free tier, 1,500 req/ngày)
 - SDK: `google-genai` (package mới — `google-generativeai` đã deprecated)
+- Model: `gemini-2.5-flash-lite` (free tier, 1,500 req/ngày)
+
+### Google Sheets
+
+| Bot | Sheet link |
+|-----|-----------|
+| Damon | [Link](https://docs.google.com/spreadsheets/d/1FccOyealfvkLueXOz4ltKmrh_nVqnDxxWYZP_Mcfj7U) |
+| Quinn | [Link](https://docs.google.com/spreadsheets/d/1AqcWPlAtlbwPXqd-VGj-VYovq7NnHcgvfujAi848p9Y) |
 
 ---
 
-## Deployment — GCP VM
+## Systemd Services
 
-Cả 2 bot chạy trên cùng VM với Apple monitor: `apple-monitor` (us-central1-a, e2-micro, Always Free).
-
-### Systemd services
-
-| Service | WorkingDir | Script |
-| --------- | ----------- | -------- |
+| Service | WorkingDir trên VM | Script |
+|---------|--------------------|--------|
 | `finance-bot.service` | `/home/dphm57/finance_bot/` | `finance_bot.py` |
 | `finance-bot-quinn.service` | `/home/dphm57/finance_bot_quinn/` | `finance_bot.py` |
 
-Cả 2 service không set env vars — config hardcode trực tiếp trong code (với `os.environ.get(KEY, default)`).
+Config không dùng env file — credentials hardcode trực tiếp trong code với `os.environ.get(KEY, default)`.
 
-### Lệnh thường dùng trên VM
+---
+
+## Lệnh thường dùng trên VM
 
 ```bash
 # Xem trạng thái
@@ -110,11 +127,18 @@ sudo journalctl -u finance-bot -f
 sudo journalctl -u finance-bot-quinn -f
 ```
 
-### Update code lên VM (chạy trên máy Windows)
+---
+
+## Update code lên VM (chạy trên máy Windows)
 
 ```powershell
-# Damon bot
+# Damon bot — cập nhật 1 file
 gcloud compute scp "M:\Working\financebot\damon-bot\finance_bot.py" dphm57@apple-monitor:/home/dphm57/finance_bot/ --zone=us-central1-a --quiet
+
+# Damon bot — cập nhật nhiều file (bao gồm market_digest.py)
+gcloud compute scp "M:\Working\financebot\damon-bot\finance_bot.py" "M:\Working\financebot\damon-bot\market_digest.py" "M:\Working\financebot\damon-bot\requirements.txt" dphm57@apple-monitor:/home/dphm57/finance_bot/ --zone=us-central1-a --quiet
+
+# Restart sau khi upload
 gcloud compute ssh dphm57@apple-monitor --zone=us-central1-a --quiet --command="sudo systemctl restart finance-bot"
 
 # Quinn bot
@@ -124,27 +148,55 @@ gcloud compute ssh dphm57@apple-monitor --zone=us-central1-a --quiet --command="
 
 ---
 
-## UX Flow v2 — Nhập chi tiêu
+## Tính năng: Market Digest (Damon Bot)
+
+Module `market_digest.py` thu thập dữ liệu thị trường và gửi vào Telegram 4 lần/ngày.
+
+### Lịch gửi
+
+| Giờ GMT+7 | Giờ UTC | Job |
+|-----------|---------|-----|
+| 05:45 | 22:45 (hôm trước) | `morning_digest` |
+| 09:00 | 02:00 | `morning_digest` |
+| 13:00 | 06:00 | `morning_digest` |
+| 17:30 | 10:30 | `morning_digest` |
+
+### Nội dung bản tin
+
+| Mục | Nguồn dữ liệu | Ghi chú |
+|-----|--------------|---------|
+| Giá vàng thế giới | yfinance `GC=F` | Không cần API key |
+| Giá vàng Việt Nam | Ước tính từ `GC=F` × `USDVND=X` × (37.5/31.1035) × 1.02 | Tham chiếu, không phải SJC chính thức |
+| Khối ngoại mua/bán | vnstock v4 VN30 `price_board()`, cột `match_foreign_buy/sell_value` | Chỉ VN30 |
+| Tin BĐS | Scrape `cafef.vn/bat-dong-san.chn` (h2/h3 headlines) | Top 5 |
+| Từ khóa kinh doanh | Scrape `cafef.vn` homepage, score theo finance keywords | Top 3 |
+
+### Nguồn đã loại bỏ
+
+| Nguồn | Lý do |
+|-------|-------|
+| sjc.com.vn | Chặn bởi Cloudflare 403 |
+| TCBS / SSI / VNDirect foreign_trade API | 404 / 403 / timeout |
+| pytrends (Google Trends) | 404 / 429 rate-limited |
+| batdongsan.com.vn | URL thay đổi, tất cả 404 |
+| Tự doanh | Không có public API |
+
+---
+
+## Features chi tiêu
+
+### UX Flow v2
 
 ```text
 Gõ text tự do hoặc /add
   → Bot: "Ghi nhận: 1. 30.000đ · ăn sáng → Ăn uống ngoài"
   → Chọn nguồn tiền cho từng giao dịch
 
-Chọn nguồn (inline keyboard, nhiều tx thì hỏi từng cái)
-  → Bot: Xác nhận toàn bộ + nút ✏️ category cho từng tx
+Chọn nguồn (inline keyboard)
+  → Bot: Xác nhận toàn bộ + nút ✏️ chỉnh category
 
 Xác nhận / chỉnh category / lưu
   → ✅ Đã lưu X giao dịch
-```
-
-### Multi-transaction input
-
-```text
-Nhập nhiều dòng cùng lúc:
-30k ăn sáng
-200k grab
-50k cafe
 ```
 
 ### Parser format
@@ -152,102 +204,97 @@ Nhập nhiều dòng cùng lúc:
 ```text
 <số><đơn vị> <lý do>
 
-Đơn vị: k = ×1,000 | m hoặc tr = ×1,000,000
+k = ×1,000 | tr / m = ×1,000,000
 Ví dụ:  30k ăn sáng  →  30,000đ
         1.5m quần áo →  1,500,000đ
         85000 bún bò →  85,000đ
 
 Quinn bot thêm:
   $5 netflix    →  $5.00 USD
-  5$ netflix    →  $5.00 USD
   5 usd netflix →  $5.00 USD
 ```
 
----
+### Nhắc nhở tự động hàng ngày
 
-## Persistent storage (trên VM)
-
-| File | Nội dung |
-| ------ | --------- |
-| `user_sources.json` | danh sách nguồn tiền + số lần dùng |
-| `learned_keywords.json` | keywords tự học từ category edit |
-
----
-
-## Nguồn tiền mặc định
-
-### Damon (tất cả VND)
-VPBank, Tiền mặt, ZaloPay, MoMo
-
-### Quinn (VND + USD)
-VIB (VND), MB Bank (VND), MoMo (VND), Chase (USD), Apple Card (USD)
+| Bot | Giờ (GMT+7) | Nội dung |
+|-----|------------|----------|
+| Damon | 23:30 | "Ngày hôm nay của đồng chí dài rồi, thương bạn lắm, nhưng đừng quên ghi chép chi tiêu, vì bạn tiêu nhiều vl" |
+| Quinn | 23:30 | "Ngày hôm nay của em bé dài rồi, nhưng đừng quên ghi chép chi tiêu nhé 💜" |
 
 ---
 
 ## Lệnh bot
 
 | Lệnh | Mô tả |
-| ------ | ------- |
+|------|-------|
 | `/add` | Ghi chi tiêu mới (có hướng dẫn) |
 | `/today` | Tổng chi tiêu hôm nay theo category |
-| `/week` | Tổng 7 ngày gần nhất + % |
+| `/week` | Tổng 7 ngày gần nhất |
 | `/month` | Tổng tháng này theo category + nguồn |
-| `/analyze` | AI phân tích chi tiêu tháng + lời khuyên |
-| `/src` | Quản lý nguồn tiền (xóa, xem số lần dùng) |
-| `/help` | Hiển thị danh sách lệnh |
+| `/analyze` | AI phân tích chi tiêu tháng + chat follow-up |
+| `/src` | Quản lý nguồn tiền |
+| `/help` | Danh sách lệnh |
 | `/cancel` | Hủy thao tác đang làm |
-
-### Nhắc nhở tự động
-
-Mỗi ngày lúc **23:30 GMT+7** (16:30 UTC) bot tự nhắn:
-
-- **Damon**: "Ngày hôm nay của đồng chí dài rồi, thương bạn lắm, nhưng đừng quên ghi chép chi tiêu, vì bạn tiêu nhiều vl"
-- **Quinn**: "Ngày hôm nay của em bé dài rồi, nhưng đừng quên ghi chép chi tiêu nhé 💜"
 
 ---
 
-## Google Sheets
-
-### Cấu trúc cột (v2 — có Tiền tệ)
+## Google Sheets — Cấu trúc cột (v2)
 
 `STT | Ngày | Giờ | Nguồn | Số tiền | Tiền tệ | Category | Lý do | Ghi chú`
 
-Index: 0 · 1 · 2 · 3 · 4 · 5 · **6** · **7** · 8
+Index:  0  ·  1  ·  2  ·  3  ·  4  ·  5  ·  **6**  ·  **7**  ·  8
 
-> ⚠️ Category ở index 6 (không phải 5 như trước). Code đã cập nhật đúng.
+> ⚠️ Category ở index **6** (không phải 5 như schema cũ). `_ensure_currency_column()` tự migrate tab cũ thiếu cột Tiền tệ.
 
-### Migration tự động
+---
 
-`_ensure_currency_column()` tự detect tab cũ thiếu cột Tiền tệ → insert + back-fill VND.
+## Nguồn tiền mặc định
 
-- [Sheet Damon](https://docs.google.com/spreadsheets/d/1FccOyealfvkLueXOz4ltKmrh_nVqnDxxWYZP_Mcfj7U)
-- [Sheet Quinn](https://docs.google.com/spreadsheets/d/1AqcWPlAtlbwPXqd-VGj-VYovq7NnHcgvfujAi848p9Y)
+| Bot | Nguồn |
+|-----|-------|
+| Damon | VPBank, Tiền mặt, ZaloPay, MoMo |
+| Quinn | VIB (VND), MB Bank (VND), MoMo (VND), Chase (USD), Apple Card (USD) |
 
 ---
 
 ## Categories
 
-### Damon & Quinn (chung)
-Ăn uống ngoài, Đi chợ, Đi siêu thị, Di chuyển, Du lịch, Phí sinh hoạt, Tiền nhà, Tín dụng, Trải nghiệm, Giải trí, Chăm sóc cá nhân, Quà/Tặng, Sức khỏe, Thiết bị, Đặt hàng online, Học tập (Quinn), Phạt, Khác
+Damon & Quinn dùng chung: Ăn uống ngoài, Đi chợ, Đi siêu thị, Di chuyển, Du lịch, Phí sinh hoạt, Tiền nhà, Tín dụng, Trải nghiệm, Giải trí, Chăm sóc cá nhân, Quà/Tặng, Sức khỏe, Thiết bị, Đặt hàng online, Học tập *(Quinn)*, Phạt, Khác
 
-### Khác nhau
 | Bot | Category riêng |
-| ----- | --------------- |
+|-----|---------------|
 | Damon | `Quinn` — keywords: quinn, quỳnh anh, quỳnh |
 | Quinn | `Minh` — keywords: minh, minh dao, đưa minh, chuyển cho minh |
 
-Quinn bot có thêm English keywords cho tất cả categories.
+---
+
+## Dependencies
+
+```
+python-telegram-bot[job-queue]>=20.0
+gspread>=5.0
+google-auth>=2.0
+google-genai>=1.0.0
+yfinance>=0.2.0          ← market digest: gold + USD/VND rate
+beautifulsoup4>=4.12.0   ← market digest: scrape cafef.vn
+lxml>=5.0.0              ← market digest: HTML parser
+requests>=2.31.0         ← market digest: HTTP calls
+vnstock>=4.0.0           ← market digest: VN30 foreign trading
+```
 
 ---
 
 ## Lỗi đã gặp & cách xử lý
 
 | Lỗi | Nguyên nhân | Fix |
-| ----- | ------------ | ----- |
-| `Conflict: terminated by other getUpdates` | 2 instance bot cùng chạy | `taskkill /FI "IMAGENAME eq python.exe" /F` |
-| `models/gemini-1.5-flash is not found` | Model cũ không còn | Đổi sang `gemini-2.5-flash-lite` |
-| `UnicodeEncodeError` | Windows cp1252 không đọc emoji | Dùng ASCII cho `print()` |
+|-----|------------|-----|
+| `Conflict: terminated by other getUpdates` | 2 instance cùng chạy | `taskkill /FI "IMAGENAME eq python.exe" /F` |
+| `models/gemini-1.5-flash is not found` | Model cũ | Đổi sang `gemini-2.5-flash-lite` |
+| `UnicodeEncodeError` | Windows cp1252 không encode emoji | Dùng ASCII cho `print()`, Telegram vẫn nhận UTF-8 |
 | `google-generativeai` FutureWarning | Package deprecated | Đổi sang `google-genai` |
-| `can't parse entities` trong /analyze | Gemini trả về Markdown không hợp lệ | Bỏ parse_mode + strip `**`, `__`, backtick |
+| `can't parse entities` trong /analyze | Gemini trả Markdown không hợp lệ | Bỏ parse_mode + strip `**`, `__`, backtick |
 | `KeyError: 'BOT_TOKEN'` | Service không set env vars | Dùng `os.environ.get(KEY, hardcoded_default)` |
-| Cột lệch sau thêm Tiền tệ | Tab cũ không có cột currency | `_ensure_currency_column()` tự migrate |
+| Cột lệch sau thêm Tiền tệ | Tab cũ thiếu cột currency | `_ensure_currency_column()` tự migrate |
+| `ModuleNotFoundError: squarify` | vnstock3 dependency lỗi | `pip install squarify` hoặc dùng vnstock v4 |
+| `NotImplementedError: foreign_trade` | VCI source không hỗ trợ | Dùng `price_board()` thay thế |
+| sjc.com.vn 403 | Cloudflare chặn | Dùng yfinance estimate thay thế |

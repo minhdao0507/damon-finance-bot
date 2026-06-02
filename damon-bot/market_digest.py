@@ -47,7 +47,7 @@ def fetch_gold() -> tuple[str, str]:
         # 1 lượng = 37.5g, 1 troy oz = 31.1035g → 1 lượng ≈ 1.2057 troy oz
         # +2% retail/premium buffer
         vnd_per_luong = gold_usd * (37.5 / 31.1035) * usd_vnd * 1.02
-        vn_str = f"~{vnd_per_luong / 1_000_000:.1f}M đ/lượng \\(tham chiếu\\)"
+        vn_str = f"~{vnd_per_luong / 1_000_000:.1f}M đ/lượng (tham chiếu)"
         return world_str, vn_str
     except Exception:
         return "N/A", "N/A"
@@ -162,7 +162,7 @@ def build_digest() -> str:
 
         "🥇 *Giá vàng*",
         f"  • Thế giới \\(bán\\): {_esc(world_gold)}",
-        f"  • Việt Nam \\(tham chiếu\\): {vn_gold}",
+        f"  • Việt Nam \\(tham chiếu\\): {_esc(vn_gold)}",
 
         "",
         "🌏 *Khối ngoại — VN30*",

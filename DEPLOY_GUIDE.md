@@ -1,123 +1,165 @@
 # Deploy Guide — Finance Bots
 
-## Files cần có
+Cập nhật: 2026-06-02
 
-### Bot của Damon
-- `finance_bot.py` — bot chính
-- `credentials.json` — Google service account
-- `requirements.txt`
-- `railway_damon.json` → đổi tên thành `railway.json`
-
-### Bot của Quinn
-- `finance_bot_quinn.py` — bot của Quinn
-- `credentials.json` — cùng service account
-- `requirements.txt`
-- `railway_quinn.json` → đổi tên thành `railway.json`
+Cả 2 bot (`finance-bot` và `finance-bot-quinn`) chạy trên VM `apple-monitor` (GCP project `apple-monitor`, us-central1-a, e2-micro Always Free). Mỗi bot là 1 systemd service độc lập.
 
 ---
 
-## Bước 1 — Điền config (làm trước khi deploy)
+## Cấu trúc trên VM
 
-### Damon's bot (`finance_bot.py`)
-```python
-BOT_TOKEN = "1234567890:AAF..."    # BotFather token của Damon's bot
-SHEET_ID = "1PmTMrUEhZqwa3..."     # Google Sheet ID của Damon
-YOUR_CHAT_ID = 987654321           # Telegram ID của Damon
 ```
-
-### Quinn's bot (`finance_bot_quinn.py`)
-```python
-BOT_TOKEN = "9876543210:BBG..."    # BotFather token của Quinn's bot (tạo bot mới)
-SHEET_ID = "2QnUNSfiBkrxb4..."     # Google Sheet ID của Quinn (tạo sheet mới)
-YOUR_CHAT_ID = 123456789           # Telegram ID của Quinn
+/home/dphm57/
+├── finance_bot/            ← Damon bot
+│   ├── finance_bot.py
+│   ├── market_digest.py
+│   ├── requirements.txt
+│   ├── credentials.json
+│   ├── learned_keywords.json
+│   └── user_sources.json
+└── finance_bot_quinn/      ← Quinn bot
+    ├── finance_bot.py
+    ├── requirements.txt
+    ├── credentials.json
+    ├── learned_keywords.json
+    └── user_sources.json
 ```
-
-### Lấy Telegram chat ID
-Quinn nhắn tin cho @userinfobot → bot reply ID ngay
-
-### Tạo bot mới cho Quinn
-1. Nhắn @BotFather
-2. /newbot
-3. Đặt tên: "Quinn Finance Bot"
-4. Lấy token
 
 ---
 
-## Bước 2 — Deploy lên Railway (free, 24/7)
+## Systemd Services
 
-### Deploy bot Damon
+| File | Service name | Bot |
+|------|-------------|-----|
+| `/etc/systemd/system/finance-bot.service` | `finance-bot` | Damon |
+| `/etc/systemd/system/finance-bot-quinn.service` | `finance-bot-quinn` | Quinn |
+
+### Nội dung service file (Damon)
+
+```ini
+[Unit]
+Description=Damon Finance Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=dphm57
+WorkingDirectory=/home/dphm57/finance_bot
+ExecStart=/usr/bin/python3 /home/dphm57/finance_bot/finance_bot.py
+Restart=always
+RestartSec=10
+Environment=BOT_TOKEN=<token>
+Environment=SHEET_ID=<sheet_id>
+Environment=YOUR_CHAT_ID=<chat_id>
+Environment=GEMINI_API_KEY=<gemini_key>
+Environment=ALLOWED_IDS=<chat_id>
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
+## Update code lên VM (chạy trên Windows)
+
+### Damon bot
+
+```powershell
+# Upload file(s)
+gcloud compute scp "M:\Working\financebot\damon-bot\finance_bot.py" dphm57@apple-monitor:/home/dphm57/finance_bot/ --zone=us-central1-a --quiet
+
+# Upload kèm market_digest.py
+gcloud compute scp "M:\Working\financebot\damon-bot\finance_bot.py" "M:\Working\financebot\damon-bot\market_digest.py" dphm57@apple-monitor:/home/dphm57/finance_bot/ --zone=us-central1-a --quiet
+
+# Restart
+gcloud compute ssh dphm57@apple-monitor --zone=us-central1-a --quiet --command="sudo systemctl restart finance-bot"
+```
+
+### Quinn bot
+
+```powershell
+gcloud compute scp "M:\Working\financebot\quinn-bot\finance_bot.py" dphm57@apple-monitor:/home/dphm57/finance_bot_quinn/ --zone=us-central1-a --quiet
+gcloud compute ssh dphm57@apple-monitor --zone=us-central1-a --quiet --command="sudo systemctl restart finance-bot-quinn"
+```
+
+---
+
+## Kiểm tra trạng thái
+
 ```bash
-# Tạo folder riêng
-mkdir damon-bot && cd damon-bot
+# SSH vào VM
+gcloud compute ssh dphm57@apple-monitor --zone=us-central1-a
 
-# Copy files vào
-cp ../finance_bot.py .
-cp ../credentials.json .
-cp ../requirements.txt .
-cp ../railway_damon.json ./railway.json
+# Xem trạng thái
+sudo systemctl status finance-bot
+sudo systemctl status finance-bot-quinn
 
-# Push lên GitHub
-git init
-git add .
-git commit -m "Damon finance bot"
-git remote add origin https://github.com/YOUR_USERNAME/damon-finance-bot
-git push -u origin main
+# Xem log realtime
+sudo journalctl -u finance-bot -f
+sudo journalctl -u finance-bot-quinn -f
 ```
 
-Vào https://railway.app → New Project → Deploy from GitHub → chọn repo → Add Variables:
-- BOT_TOKEN = (token của Damon)
-- SHEET_ID = (sheet ID của Damon)
+---
 
-### Deploy bot Quinn
+## Gửi test market digest thủ công
+
 ```bash
-mkdir quinn-bot && cd quinn-bot
+cd /home/dphm57/finance_bot && BOT_TOKEN=<token> YOUR_CHAT_ID=<chat_id> python3 -c "
+import asyncio, sys, os
+sys.path.insert(0, '.')
+from market_digest import build_digest
+from telegram import Bot
 
-cp ../finance_bot_quinn.py .
-cp ../credentials.json .
-cp ../requirements.txt .
-cp ../railway_quinn.json ./railway.json
+async def send():
+    text = await asyncio.to_thread(build_digest)
+    async with Bot(token=os.environ['BOT_TOKEN']) as bot:
+        await bot.send_message(chat_id=int(os.environ['YOUR_CHAT_ID']), text=text, parse_mode='MarkdownV2')
+    print('Sent!')
 
-git init
-git add .
-git commit -m "Quinn finance bot"
-git remote add origin https://github.com/YOUR_USERNAME/quinn-finance-bot
-git push -u origin main
+asyncio.run(send())
+"
 ```
 
-Vào Railway → New Project → chọn repo quinn → Add Variables:
-- BOT_TOKEN = (token của Quinn)
-- SHEET_ID = (sheet ID của Quinn)
+---
+
+## Cài mới từ đầu (nếu cần migrate VM)
+
+```bash
+# SSH vào VM mới
+gcloud compute ssh dphm57@<vm-name> --zone=<zone>
+
+# Tạo thư mục
+mkdir -p ~/finance_bot ~/finance_bot_quinn
+
+# Copy file từ Windows
+gcloud compute scp "M:\Working\financebot\damon-bot\finance_bot.py" \
+    "M:\Working\financebot\damon-bot\market_digest.py" \
+    "M:\Working\financebot\damon-bot\requirements.txt" \
+    "M:\Working\financebot\keys\credentials.json" \
+    dphm57@<vm-name>:~/finance_bot/ --zone=<zone> --quiet
+
+# Cài dependencies
+cd ~/finance_bot && pip3 install -r requirements.txt
+
+# Tạo service file và enable
+sudo nano /etc/systemd/system/finance-bot.service
+sudo systemctl daemon-reload
+sudo systemctl enable finance-bot
+sudo systemctl start finance-bot
+```
 
 ---
 
-## Bước 3 — Test
+## Dependencies
 
-### Damon test bot của mình
-Tìm bot trên Telegram → /start → thử nhắn `vpbank - 50000 - test`
-
-### Quinn test bot của cô ấy
-Quinn tìm bot theo tên trên Telegram → /start → thử nhắn `vpbank - 50000 - test`
-
----
-
-## Checklist trước khi deploy
-
-- [ ] Tạo 2 bot riêng trên BotFather (lấy 2 token khác nhau)
-- [ ] Tạo 2 Google Sheet riêng
-- [ ] Share cả 2 sheet với cùng service account email
-- [ ] Lấy Telegram chat ID của Quinn (@userinfobot)
-- [ ] Điền đúng config vào từng file
-- [ ] Deploy 2 repo riêng lên Railway
-
----
-
-## Sau khi deploy xong
-
-Cả hai đều chỉ cần mở Telegram và nhắn tin vào bot là xong.
-Không cần máy tính, không cần app gì thêm.
-
-Convention nhắn tin:
-  vpbank - 85000 - bun bo an trua
-  tien mat - 30000 - cafe
-  zalopay - 350000 - tien dien thang 5
-  momo - 50k - grab
+```
+python-telegram-bot[job-queue]>=20.0
+gspread>=5.0
+google-auth>=2.0
+google-genai>=1.0.0
+yfinance>=0.2.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+requests>=2.31.0
+vnstock>=4.0.0
+```
