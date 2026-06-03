@@ -157,7 +157,7 @@ Module `market_digest.py` thu thập dữ liệu thị trường và gửi vào 
 | Giờ GMT+7 | Giờ UTC | Job |
 |-----------|---------|-----|
 | 05:45 | 22:45 (hôm trước) | `morning_digest` |
-| 09:00 | 02:00 | `morning_digest` |
+| 09:30 | 02:30 | `morning_digest` |
 | 13:00 | 06:00 | `morning_digest` |
 | 17:30 | 10:30 | `morning_digest` |
 

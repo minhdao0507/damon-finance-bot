@@ -888,16 +888,18 @@ def main():
     app.add_handler(analyze_conv)
     app.add_handler(conv)
 
+    _jk = {"misfire_grace_time": 300}  # run even if up to 5 min late
+
     # 23:30 GMT+7 = 16:30 UTC
-    app.job_queue.run_daily(daily_reminder, time=dtime(hour=16, minute=30, tzinfo=timezone.utc))
+    app.job_queue.run_daily(daily_reminder, time=dtime(hour=16, minute=30, tzinfo=timezone.utc), job_kwargs=_jk)
     # 05:45 GMT+7 = 22:45 UTC
-    app.job_queue.run_daily(morning_digest, time=dtime(hour=22, minute=45, tzinfo=timezone.utc))
-    # 09:00 GMT+7 = 02:00 UTC
-    app.job_queue.run_daily(morning_digest, time=dtime(hour=2,  minute=0,  tzinfo=timezone.utc))
+    app.job_queue.run_daily(morning_digest, time=dtime(hour=22, minute=45, tzinfo=timezone.utc), job_kwargs=_jk)
+    # 09:30 GMT+7 = 02:30 UTC
+    app.job_queue.run_daily(morning_digest, time=dtime(hour=2,  minute=30, tzinfo=timezone.utc), job_kwargs=_jk)
     # 13:00 GMT+7 = 06:00 UTC
-    app.job_queue.run_daily(morning_digest, time=dtime(hour=6,  minute=0,  tzinfo=timezone.utc))
+    app.job_queue.run_daily(morning_digest, time=dtime(hour=6,  minute=0,  tzinfo=timezone.utc), job_kwargs=_jk)
     # 17:30 GMT+7 = 10:30 UTC
-    app.job_queue.run_daily(morning_digest, time=dtime(hour=10, minute=30, tzinfo=timezone.utc))
+    app.job_queue.run_daily(morning_digest, time=dtime(hour=10, minute=30, tzinfo=timezone.utc), job_kwargs=_jk)
 
     print("Finance Bot dang chay...")
     app.run_polling()
